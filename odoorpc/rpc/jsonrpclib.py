@@ -22,6 +22,7 @@
 import json
 import random
 import sys
+import base64
 # Python 2
 if sys.version_info[0] < 3:
     from urllib2 import build_opener, HTTPCookieProcessor, Request
@@ -50,12 +51,16 @@ else:
 
 class Proxy(object):
     """Base class to implement a proxy to perform requests."""
-    def __init__(self, host, port, timeout=120, ssl=False, opener=None):
+    def __init__(self, host, port, timeout=120, ssl=False, opener=None,
+                 user=None, passwd=None):
         self._root_url = "{http}{host}:{port}".format(
             http=(ssl and "https://" or "http://"), host=host, port=port)
         self._timeout = timeout
         self._builder = URLBuilder(self)
         self._opener = opener
+        self.auth = None
+        if user and passwd:
+            self.auth = base64.b64encode('%s:%s' % (user, passwd))
         if not opener:
             cookie_jar = CookieJar()
             self._opener = build_opener(HTTPCookieProcessor(cookie_jar))
@@ -72,8 +77,8 @@ class ProxyJSON(Proxy):
     to all JSON methods.
     """
     def __init__(self, host, port, timeout=120, ssl=False, opener=None,
-                 deserialize=True):
-        Proxy.__init__(self, host, port, timeout, ssl, opener)
+                 user=None, passwd=None, deserialize=True):
+        Proxy.__init__(self, host, port, timeout, ssl, opener, user, passwd)
         self._deserialize = deserialize
 
     def __call__(self, url, params):
@@ -88,6 +93,8 @@ class ProxyJSON(Proxy):
         request = Request(url='/'.join([self._root_url, url]),
                           data=encode_data(data))
         request.add_header('Content-Type', 'application/json')
+        if self.auth:
+            request.add_header("Authorization", "Basic %s" % self.auth)
         response = self._opener.open(request, timeout=self._timeout)
         if not self._deserialize:
             return response
@@ -109,6 +116,8 @@ class ProxyHTTP(Proxy):
             for hkey in headers:
                 hvalue = headers[hkey]
                 request.add_header(hkey, hvalue)
+        if self.auth:
+            request.add_header("Authorization", "Basic %s" % self.auth)
         return self._opener.open(request, timeout=self._timeout)
 
 
